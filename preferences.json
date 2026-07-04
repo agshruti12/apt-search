@@ -1,0 +1,46 @@
+{
+  "beds": [3, 4],
+  "baths": [2],
+  "price_min": 0,
+  "price_max_by_beds": {
+    "3": 6923,
+    "4": 9231
+  },
+  "monthly_budget_by_beds": {
+    "3": 7500,
+    "4": 10000
+  },
+  "no_broker_fee_only": false,
+  "neighborhoods": [
+    "Battery Park City", "Bowery", "Chinatown", "Civic Center",
+    "East Village", "Financial District", "Greenwich Village",
+    "Little Italy", "Lower East Side", "NoHo", "NoLita",
+    "SoHo", "Tribeca", "Two Bridges", "West Village",
+    "Flatiron District", "Gramercy Park", "Hell's Kitchen",
+    "Hudson Yards", "Kips Bay", "Midtown", "Midtown East",
+    "Sutton Place", "Turtle Bay", "Midtown South", "Koreatown",
+    "Murray Hill", "NoMad", "Stuyvesant Town"
+  ],
+  "move_in_date": "2026-09-01",
+  "nice_to_haves": {
+    "laundry_in_unit": true,
+    "laundry_in_building": true,
+    "dishwasher": true,
+    "near_subway": true,
+    "gym": true,
+    "rooftop": false,
+    "no_flex_rooms": false
+  },
+  "ranking_weights": {
+    "price": 0.28,
+    "neighborhood": 0.20,
+    "beds": 0.10,
+    "baths": 0.08,
+    "laundry_in_unit": 0.08,
+    "laundry_in_building": 0.05,
+    "dishwasher": 0.07,
+    "near_subway": 0.07,
+    "gym": 0.05,
+    "rooftop": 0.02
+  }
+}

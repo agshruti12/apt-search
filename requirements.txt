@@ -1,0 +1,16 @@
+playwright
+beautifulsoup4
+lxml
+sqlalchemy
+gspread
+google-auth
+google-auth-oauthlib
+google-api-python-client
+twilio
+geopy
+googlemaps
+scikit-learn
+numpy
+apscheduler
+click
+python-dotenv

@@ -1,0 +1,23 @@
+[
+  {
+    "key": "initial_inquiry",
+    "label": "Initial Inquiry",
+    "channel": "email",
+    "subject": "Inquiry About {address}",
+    "body": "Hi {contact_name},\n\nI'm interested in the {beds}BR/{baths}BA unit at {address} listed at ${price}/month. Is it still available? Could we arrange a viewing?\n\nBest,\n{user_name}"
+  },
+  {
+    "key": "tour_request",
+    "label": "Tour Request",
+    "channel": "email",
+    "subject": "Tour Request – {address}",
+    "body": "Hi {contact_name},\n\nI'd love to schedule a tour for {address}. I'm available on {tour_date} around {tour_time}. Please let me know if that works.\n\nBest,\n{user_name}"
+  },
+  {
+    "key": "sms_inquiry",
+    "label": "SMS Inquiry",
+    "channel": "sms",
+    "subject": null,
+    "body": "Hi, I'm interested in the {beds}BR at {address} for ${price}/mo. Is it available? – {user_name}"
+  }
+]
