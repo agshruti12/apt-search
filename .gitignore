@@ -1,0 +1,21 @@
+# Python
+__pycache__/
+*.pyc
+venv/
+.env
+
+# Secrets
+credentials.json
+token_sheets.json
+
+# Data (stays local)
+data/
+logs/
+
+# Node
+web/node_modules/
+web/dist/
+
+# Debug files
+renthop_debug.html
+debug_*.py
