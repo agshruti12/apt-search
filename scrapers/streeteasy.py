@@ -81,14 +81,6 @@ class StreetEasyScraper(BaseScraper):
 
     def scrape(self, preferences: dict) -> list[dict]:
         beds_list: list[int] = preferences.get("beds", [3, 4])
-        nice = preferences.get("nice_to_haves", {})
-
-        # Must-have amenities for the search filter
-        amenities = []
-        if nice.get("laundry_in_unit"):
-            amenities.append("WASHER_DRYER")
-        if nice.get("dishwasher"):
-            amenities.append("DISHWASHER")
 
         # One browser launch to get valid PerimeterX-authenticated headers
         session_headers = self._get_api_headers(preferences, beds_list[0])
@@ -99,7 +91,7 @@ class StreetEasyScraper(BaseScraper):
         all_listings: list[dict] = []
         for beds in beds_list:
             max_price = budget_for_beds(preferences, beds)
-            listings = self._query_api(beds, max_price, amenities, session_headers)
+            listings = self._query_api(beds, max_price, [], session_headers)
             print(f"[streeteasy] {beds}BR: {len(listings)} listings from API")
             all_listings.extend(listings)
             time.sleep(random.uniform(1, 2))

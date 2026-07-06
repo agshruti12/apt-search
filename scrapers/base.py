@@ -189,7 +189,12 @@ class BaseScraper(ABC):
                 if existing:
                     existing.price = raw.get("price", existing.price)
                     existing.address = raw.get("address") or existing.address
-                    existing.neighborhood = raw.get("neighborhood") or existing.neighborhood
+                    _new_hood = raw.get("neighborhood", "")
+                    _bare = {"manhattan", "brooklyn", "queens", "bronx", "staten island"}
+                    if _new_hood and _new_hood.lower().strip() not in _bare:
+                        existing.neighborhood = _new_hood
+                    elif not existing.neighborhood or existing.neighborhood.lower().strip() in _bare:
+                        geocode_listing(existing)
                     existing.baths = raw.get("baths") or existing.baths
                     existing.broker_fee = raw.get("broker_fee") if raw.get("broker_fee") is not None else existing.broker_fee
                     existing.broker_fee_source = raw.get("broker_fee_source") or existing.broker_fee_source
@@ -250,7 +255,9 @@ class BaseScraper(ABC):
                     session.add(listing)
                     new_count += 1
                     # Fill neighborhood via Google Maps if scraper couldn't determine it
-                    if not listing.neighborhood:
+                    # Treat bare borough names as unresolved
+                    _bare_boroughs = {"manhattan", "brooklyn", "queens", "bronx", "staten island"}
+                    if not listing.neighborhood or listing.neighborhood.lower().strip() in _bare_boroughs:
                         geocode_listing(listing)
 
                 session.flush()

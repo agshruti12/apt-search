@@ -11,9 +11,12 @@ export interface Listing {
   broker_fee_source: string;
   laundry_in_unit: boolean;
   laundry_in_building: boolean;
-  dishwasher: boolean;
-  gym: boolean;
-  rooftop: boolean;
+  laundry_label?: string;
+  has_flex_raw?: string;
+  has_photos_raw?: string;
+  dishwasher?: boolean;
+  gym?: boolean;
+  rooftop?: boolean;
   building_amenities: string;
   nearest_subway: string;
   has_flex: boolean | null;

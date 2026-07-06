@@ -100,12 +100,8 @@ def scrape(source: Optional[str]):
     prefs = load_preferences()
 
     scrapers_map = {
-        "apartments_com": "scrapers.apartments_com.ApartmentsComScraper",
-        "hotpads": "scrapers.hotpads.HotPadsScraper",
         "renthop": "scrapers.renthop.RentHopScraper",
         "streeteasy": "scrapers.streeteasy.StreetEasyScraper",
-        "trulia": "scrapers.trulia.TruliaScraper",
-        "zumper": "scrapers.zumper.ZumperScraper",
     }
 
     sources = [source] if source else list(scrapers_map.keys())
@@ -323,6 +319,11 @@ def mark_replied(listing_id: int, snippet: Optional[str]):
 
         session.commit()
         click.echo(f"Marked listing {listing_id} as replied.")
+        try:
+            from services.sheets import sync_to_sheet
+            sync_to_sheet(session)
+        except Exception as e:
+            click.echo(f"[sheets] Sync failed: {e}")
     finally:
         session.close()
 
