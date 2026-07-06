@@ -19,3 +19,4 @@ web/dist/
 # Debug files
 renthop_debug.html
 debug_*.py
+.env.example
