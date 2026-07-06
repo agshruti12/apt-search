@@ -28,7 +28,7 @@ HEADERS = [
     "Price", "Broker Fee (months)", "Broker Fee Source",
     "Laundry", "Building Amenities", "Nearest Subway",
     "Has Flex Room", "Has Photos",
-    "Move-in Date", "Listed Date", "Status",
+    "Move-in Date", "Listed Date", "Status", "Contact Notes",
     "Contact Name", "Contact Email", "Contact Phone",
     "Pre-Tour Score", "Post-Tour Score", "Notes",
 ]
@@ -36,6 +36,7 @@ HEADERS = [
 # Columns the user edits in the sheet; synced back to DB on pull
 EDITABLE_COLS = {
     "Status": "status",
+    "Contact Notes": "contact_notes",
     "Notes": "notes",
     "Pre-Tour Score": "pre_tour_score",
     "Post-Tour Score": "post_tour_score",
@@ -99,6 +100,7 @@ def _listing_to_row(listing: Listing) -> list:
         listing.move_in_date or "",
         listing.listed_date or "",
         listing.status or "new",
+        listing.contact_notes or "",
         listing.contact_name or "",
         listing.contact_email or "",
         listing.contact_phone or "",
@@ -137,13 +139,23 @@ def sync_to_sheet(session: Session | None = None) -> None:
         listings = session.query(Listing).all()
         updates: list[tuple[int, list]] = []
         appends: list[list] = []
+        # Delete rows for passed listings (in reverse order to preserve row numbers)
+        rows_to_delete: list[int] = []
 
         for listing in listings:
+            if listing.status == "passed":
+                if listing.id in id_to_row:
+                    rows_to_delete.append(id_to_row[listing.id])
+                continue
             row_data = _listing_to_row(listing)
             if listing.id in id_to_row:
                 updates.append((id_to_row[listing.id], row_data))
             else:
                 appends.append(row_data)
+
+        # Delete passed rows in reverse order so row numbers stay valid
+        for row_num in sorted(rows_to_delete, reverse=True):
+            ws.delete_rows(row_num)
 
         # Batch update existing rows
         if updates:
@@ -157,7 +169,7 @@ def sync_to_sheet(session: Session | None = None) -> None:
         if appends:
             ws.append_rows(appends, value_input_option="USER_ENTERED")
 
-        print(f"[sheets] Synced {len(updates)} updated + {len(appends)} new listings.")
+        print(f"[sheets] Synced {len(updates)} updated + {len(appends)} new + {len(rows_to_delete)} removed listings.")
 
         # ── Templates tab ─────────────────────────────────────────────────────
         _sync_templates_tab(sheet)

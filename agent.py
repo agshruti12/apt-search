@@ -80,6 +80,18 @@ def _send_outreach(listing: Listing, template: dict, channel: str, session, extr
     session.add(contact_record)
     listing.status = "contacted"
     listing.updated_at = datetime.utcnow().isoformat()
+
+    # Write human-readable contact note
+    date_str = datetime.utcnow().strftime("%b %-d")
+    if extra and extra.get("tour_date") and extra.get("tour_time"):
+        # Parse tour_date into display format
+        try:
+            td = datetime.strptime(extra["tour_date"], "%Y-%m-%d").strftime("%b %-d")
+        except ValueError:
+            td = extra["tour_date"]
+        listing.contact_notes = f"tour: {td} @ {extra['tour_time']}"
+    else:
+        listing.contact_notes = f"inquiry: {date_str}"
     return True
 
 
@@ -117,7 +129,8 @@ def scrape(source: Optional[str]):
 
     click.echo("\nSyncing to Google Sheet…")
     try:
-        from services.sheets import sync_to_sheet
+        from services.sheets import pull_from_sheet, sync_to_sheet
+        pull_from_sheet()
         sync_to_sheet()
     except Exception as e:
         click.echo(f"[sheets] Sync failed: {e}")
@@ -230,7 +243,7 @@ def schedule_tours(date: str, ids: str):
                     confirmed=False,
                 )
                 session.add(tour)
-                listing.status = "awaiting_confirmation"
+                listing.status = "touring"
                 sent += 1
 
         session.commit()

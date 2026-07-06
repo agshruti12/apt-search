@@ -24,6 +24,7 @@ export interface Listing {
   move_in_date: string;
   listed_date: string;
   status: string;
+  contact_notes: string;
   contact_name: string;
   contact_email: string;
   contact_phone: string;

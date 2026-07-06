@@ -6,6 +6,8 @@ const API_KEY = "AIzaSyAadRdZA09ux8AcAjQUktChZLjQK1QWK9M";
 const SHEET_NAME = "Apartment Listings";
 const API_BASE = `https://sheets.googleapis.com/v4/spreadsheets/${SHEET_ID}/values`;
 
+// Set this after deploying your Apps Script Web App
+
 const ALL_SOURCES = ["renthop", "streeteasy", "apartments_com"];
 const ALL_STATUSES = ["new", "liked", "contacted", "touring"];
 
@@ -17,34 +19,6 @@ const DEFAULT_FILTERS: Filters = {
   statuses: [],
   laundry: "any",
   brokerFee: "any",
-};
-
-// Map sheet column headers → Listing fields
-const COL_MAP: Record<string, keyof Listing> = {
-  "ID": "id",
-  "Source": "source",
-  "URL": "url",
-  "Address": "address",
-  "Neighborhood": "neighborhood",
-  "Beds": "beds",
-  "Baths": "baths",
-  "Price": "price",
-  "Broker Fee (months)": "broker_fee",
-  "Broker Fee Source": "broker_fee_source",
-  "Laundry": "laundry_label",
-  "Building Amenities": "building_amenities",
-  "Nearest Subway": "nearest_subway",
-  "Has Flex Room": "has_flex_raw",
-  "Has Photos": "has_photos_raw",
-  "Move-in Date": "move_in_date",
-  "Listed Date": "listed_date",
-  "Status": "status",
-  "Contact Name": "contact_name",
-  "Contact Email": "contact_email",
-  "Contact Phone": "contact_phone",
-  "Pre-Tour Score": "pre_tour_score",
-  "Post-Tour Score": "post_tour_score",
-  "Notes": "notes",
 };
 
 function parseRow(headers: string[], row: string[]): Listing {
@@ -72,6 +46,7 @@ function parseRow(headers: string[], row: string[]): Listing {
     move_in_date: raw["Move-in Date"] || "",
     listed_date: raw["Listed Date"] || "",
     status: raw["Status"] || "new",
+    contact_notes: raw["Contact Notes"] || "",
     contact_name: raw["Contact Name"] || "",
     contact_email: raw["Contact Email"] || "",
     contact_phone: raw["Contact Phone"] || "",
@@ -80,6 +55,7 @@ function parseRow(headers: string[], row: string[]): Listing {
     notes: raw["Notes"] || "",
   };
 }
+
 
 function laundryLabel(l: Listing) {
   if (l.laundry_in_unit) return <span className="laundry-unit">In Unit</span>;
@@ -106,6 +82,7 @@ function fmt(n: number | null) {
   return "$" + n.toLocaleString();
 }
 
+
 type Col = { key: SortKey; label: string; width?: number };
 
 const COLS: Col[] = [
@@ -122,7 +99,7 @@ const COLS: Col[] = [
   { key: "building_amenities", label: "Amenities", width: 160 },
   { key: "nearest_subway", label: "Subway", width: 140 },
   { key: "move_in_date", label: "Move-In", width: 90 },
-  { key: "contact_phone", label: "Contact", width: 110 },
+  { key: "contact_phone", label: "Contact", width: 150 },
   { key: "notes", label: "Notes", width: 150 },
 ];
 
@@ -160,6 +137,51 @@ function applySort(listings: Listing[], key: SortKey, dir: SortDir): Listing[] {
   });
 }
 
+// Parse "tour: Sep 15 @ 10:00 AM" → { date: "Sep 15", time: "10:00 AM" } | null
+function parseTourNote(note: string): { date: string; time: string } | null {
+  const m = note.match(/^tour:\s*(.+?)\s*@\s*(.+)$/i);
+  if (!m) return null;
+  return { date: m[1].trim(), time: m[2].trim() };
+}
+
+function CalendarView({ listings }: { listings: Listing[] }) {
+  const tours = listings
+    .filter(l => l.status === "touring" && parseTourNote(l.contact_notes))
+    .map(l => ({ listing: l, ...parseTourNote(l.contact_notes)! }))
+    .sort((a, b) => a.date.localeCompare(b.date) || a.time.localeCompare(b.time));
+
+  if (tours.length === 0) {
+    return <div className="empty">No confirmed tours yet. Set a listing's status to "touring" and add a contact note like "tour: Sep 15 @ 10:00 AM".</div>;
+  }
+
+  // Group by date
+  const byDate: Record<string, typeof tours> = {};
+  tours.forEach(t => { (byDate[t.date] = byDate[t.date] || []).push(t); });
+
+  return (
+    <div className="calendar">
+      {Object.entries(byDate).map(([date, slots]) => (
+        <div key={date} className="cal-day">
+          <div className="cal-date">{date}</div>
+          {slots.map(({ listing, time }) => (
+            <div key={listing.id} className="cal-slot">
+              <div className="cal-time">{time}</div>
+              <div className="cal-info">
+                <a className="addr-link" href={listing.url} target="_blank" rel="noreferrer">
+                  {listing.address}
+                </a>
+                <span className="cal-neighborhood">{listing.neighborhood}</span>
+                <span className="price">${listing.price?.toLocaleString()}/mo</span>
+              </div>
+              {listing.contact_name && <div className="cal-contact">{listing.contact_name}{listing.contact_phone ? ` · ${listing.contact_phone}` : ""}</div>}
+            </div>
+          ))}
+        </div>
+      ))}
+    </div>
+  );
+}
+
 function MultiCheck({ label, options, value, onChange }: {
   label: string; options: string[]; value: string[]; onChange: (v: string[]) => void;
 }) {
@@ -182,14 +204,12 @@ function MultiCheck({ label, options, value, onChange }: {
 
 export default function App() {
   const [allListings, setAllListings] = useState<Listing[]>([]);
-  const [rowIndex, setRowIndex] = useState<Map<number, number>>(new Map());
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [tab, setTab] = useState<"listings" | "calendar">("listings");
   const [filters, setFilters] = useState<Filters>(DEFAULT_FILTERS);
   const [sortKey, setSortKey] = useState<SortKey>("pre_tour_score");
   const [sortDir, setSortDir] = useState<SortDir>("desc");
-  const [hiding, setHiding] = useState<Set<number>>(new Set());
-
   const fetchSheet = useCallback(() => {
     const url = `${API_BASE}/${encodeURIComponent(SHEET_NAME)}?key=${API_KEY}`;
     setLoading(true);
@@ -199,14 +219,8 @@ export default function App() {
         const rows: string[][] = data.values || [];
         if (rows.length < 2) { setAllListings([]); setLoading(false); return; }
         const headers = rows[0];
-        const idxMap = new Map<number, number>();
-        const listings = rows.slice(1).map((row, i) => {
-          const l = parseRow(headers, row);
-          idxMap.set(l.id, i + 2); // 1-based sheet row (row 1 = header)
-          return l;
-        });
+        const listings = rows.slice(1).map(row => parseRow(headers, row));
         setAllListings(listings);
-        setRowIndex(idxMap);
         setLoading(false);
       })
       .catch(() => { setError("Could not load listings. Make sure the sheet is shared publicly."); setLoading(false); });
@@ -221,31 +235,6 @@ export default function App() {
   const handleSort = (key: SortKey) => {
     if (key === sortKey) setSortDir(d => d === "asc" ? "desc" : "asc");
     else { setSortKey(key); setSortDir("asc"); }
-  };
-
-  const hideListing = async (l: Listing) => {
-    const sheetRow = rowIndex.get(l.id);
-    if (!sheetRow) return;
-
-    // Status is column R (18th column, index 17, letter R)
-    const range = `${encodeURIComponent(SHEET_NAME)}!R${sheetRow}`;
-    setHiding(prev => new Set(prev).add(l.id));
-
-    try {
-      await fetch(
-        `https://sheets.googleapis.com/v4/spreadsheets/${SHEET_ID}/values/${range}?valueInputOption=RAW&key=${API_KEY}`,
-        {
-          method: "PUT",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ values: [["passed"]] }),
-        }
-      );
-      setAllListings(prev => prev.map(x => x.id === l.id ? { ...x, status: "passed" } : x));
-    } catch {
-      alert("Could not hide listing. The sheet may need to be editable.");
-    } finally {
-      setHiding(prev => { const s = new Set(prev); s.delete(l.id); return s; });
-    }
   };
 
   const visible = useMemo(
@@ -271,10 +260,18 @@ export default function App() {
           style={{ flex: 1, maxWidth: 340, borderRadius: 8, border: "none", padding: "6px 12px", fontSize: 13, outline: "none" }}
         />
         <span className="count">{visible.length} / {allListings.filter(l => l.status !== "passed").length} listings</span>
+        <div className="tabs">
+          <button className={`tab ${tab === "listings" ? "active" : ""}`} onClick={() => setTab("listings")}>Listings</button>
+          <button className={`tab ${tab === "calendar" ? "active" : ""}`} onClick={() => setTab("calendar")}>
+            Tours {allListings.filter(l => l.status === "touring").length > 0 && <span className="tour-count">{allListings.filter(l => l.status === "touring").length}</span>}
+          </button>
+        </div>
         <button className="btn-reset" style={{ marginLeft: 8 }} onClick={fetchSheet}>↻ Refresh</button>
       </div>
 
-      <div className="filters">
+      {tab === "calendar" && <CalendarView listings={allListings} />}
+
+      {tab === "listings" && <><div className="filters">
         <MultiCheck label="Source" options={ALL_SOURCES} value={filters.sources} onChange={v => setFilter("sources", v)} />
         <div className="filter-sep" />
         <div className="filter-group">
@@ -321,7 +318,6 @@ export default function App() {
           <table>
             <thead>
               <tr>
-                <th style={{ width: 60 }}></th>
                 {COLS.map(c => (
                   <th key={c.key} className={sortKey === c.key ? "sorted" : ""}
                     style={c.width ? { width: c.width, minWidth: c.width } : {}}
@@ -333,15 +329,7 @@ export default function App() {
             </thead>
             <tbody>
               {visible.map(l => (
-                <tr key={l.id}>
-                  <td>
-                    <button
-                      className="btn-hide"
-                      title="Hide listing"
-                      disabled={hiding.has(l.id)}
-                      onClick={() => hideListing(l)}
-                    >✕</button>
-                  </td>
+                <tr key={l.id} className={l.status === "liked" ? "row-liked" : ""}>
                   <td>
                     {l.pre_tour_score !== null
                       ? <span className={scoreClass(l.pre_tour_score)}>{Number(l.pre_tour_score).toFixed(0)}</span>
@@ -373,7 +361,7 @@ export default function App() {
             </tbody>
           </table>
         )}
-      </div>
+      </div></>}
     </div>
   );
 }

@@ -49,7 +49,8 @@ class Listing(Base):
     contact_name = Column(Text)
     contact_email = Column(Text)
     contact_phone = Column(Text)
-    status = Column(Text, default="new")  # new | liked | contacted | touring | passed | awaiting_confirmation
+    status = Column(Text, default="new")  # new | liked | contacted | touring | passed
+    contact_notes = Column(Text)  # e.g. "inquiry: Jul 5" or "tour: Sep 15 @ 10:00 AM"
     pre_tour_score = Column(Float)
     post_tour_score = Column(Float)
     notes = Column(Text)
@@ -128,6 +129,7 @@ def _migrate(engine) -> None:
         ("has_photos", "BOOLEAN"),
         ("nearest_subway", "TEXT"),
         ("building_amenities", "TEXT"),
+        ("contact_notes", "TEXT"),
     ]
     with engine.connect() as conn:
         for col_name, col_def in new_cols:
