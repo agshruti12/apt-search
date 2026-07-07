@@ -112,6 +112,7 @@ def scrape(source: Optional[str]):
     prefs = load_preferences()
 
     scrapers_map = {
+        "apartments_com": "scrapers.apartments_com.ApartmentsComScraper",
         "renthop": "scrapers.renthop.RentHopScraper",
         "streeteasy": "scrapers.streeteasy.StreetEasyScraper",
     }

@@ -20,6 +20,7 @@ from config import budget_for_beds
 
 _CHROME_BINARY = "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome"
 _CHROME_PROFILE = os.path.expanduser("~/Library/Application Support/Google/Chrome")
+_FAVORITES_URL = "https://www.apartments.com/mkt/client/renter/favorites/dashboard"
 
 # Primary area in the path; additional areas in the n= param
 _PRIMARY_AREA = "east-village-new-york-ny"
@@ -79,19 +80,9 @@ class ApartmentsComScraper(BaseScraper):
     source = "apartments_com"
 
     def scrape(self, preferences: dict) -> list[dict]:
-        beds_list: list[int] = preferences.get("beds", [1])
-        min_baths: int = preferences.get("min_baths", 2)
-        nice = preferences.get("nice_to_haves", {})
-
-        amenity_slugs: list[str] = []
-        if nice.get("dishwasher"):
-            amenity_slugs.append(_AMENITY_SLUGS["dishwasher"])
-        if nice.get("laundry_in_unit") or nice.get("laundry_in_building"):
-            amenity_slugs.append(_AMENITY_SLUGS["laundry"])
-
+        """Scrape favorited listings from the Apartments.com dashboard."""
         all_listings: list[dict] = []
 
-        # Single Chrome session for the entire scrape (search + all detail pages)
         tmp_profile = tempfile.mkdtemp(prefix="apts_chrome_")
         try:
             self._copy_chrome_profile(tmp_profile)
@@ -111,24 +102,19 @@ class ApartmentsComScraper(BaseScraper):
                     ignore_default_args=["--enable-automation"],
                 )
 
-                for beds in beds_list:
-                    max_price = budget_for_beds(preferences, beds)
-                    search_url = _build_url(beds, min_baths, max_price, amenity_slugs)
-                    print(f"[apartments.com] Scraping {beds}BR: {search_url}")
+                print(f"[apartments.com] Loading favorites dashboard…")
+                urls = self._fetch_favorite_urls(ctx)
+                print(f"[apartments.com] Found {len(urls)} favorited listings")
+
+                for url in urls:
                     try:
-                        cards = self._fetch_search_cards(ctx, search_url)
-                        print(f"[apartments.com] {beds}BR: {len(cards)} cards found")
-
-                        for card_data in cards:
-                            listing = dict(card_data)  # copy
-                            if listing.get("url"):
-                                detail = self._fetch_detail(ctx, listing["url"])
-                                listing.update({k: v for k, v in detail.items() if v is not None})
-                            all_listings.append(listing)
-                            time.sleep(random.uniform(1, 2))
-
+                        card = self._card_from_url(url)
+                        detail = self._fetch_detail(ctx, url)
+                        card.update({k: v for k, v in detail.items() if v is not None})
+                        all_listings.append(card)
+                        time.sleep(random.uniform(1, 2))
                     except Exception as e:
-                        print(f"[apartments.com] Error scraping {beds}BR: {e}")
+                        print(f"[apartments.com] Error scraping {url}: {e}")
 
                 ctx.close()
         finally:
@@ -136,8 +122,64 @@ class ApartmentsComScraper(BaseScraper):
 
         deduped = self._dedupe_by_address(all_listings)
         saved = self.save_listings(deduped, preferences)
-        print(f"[apartments.com] {saved} new listings saved.")
+        print(f"[apartments.com] {saved} new/updated listings saved.")
         return deduped
+
+    def _fetch_favorite_urls(self, ctx: BrowserContext) -> list[str]:
+        """Load the favorites dashboard and extract all listing URLs."""
+        html = self._navigate(ctx, _FAVORITES_URL, wait_selector="[data-listingid], .placardContainer, .placard", timeout=20000)
+        soup = BeautifulSoup(html, "lxml")
+
+        urls: list[str] = []
+
+        # Try data-listingid articles first (same as search cards)
+        for article in soup.find_all("article", attrs={"data-listingid": True}):
+            url = article.get("data-url") or ""
+            if url and url not in urls:
+                urls.append(url)
+
+        # Fallback: anchor tags pointing to /apartments.com/ listing pages
+        if not urls:
+            for a in soup.find_all("a", href=True):
+                href = a["href"]
+                if "apartments.com" in href and href.count("/") >= 4:
+                    full = href if href.startswith("http") else "https://www.apartments.com" + href
+                    if full not in urls:
+                        urls.append(full)
+
+        return urls
+
+    def _card_from_url(self, url: str) -> dict:
+        """Build a minimal card dict from just a URL (detail page fills the rest)."""
+        listing_id = url.rstrip("/").split("/")[-1]
+        return {
+            "external_id": make_external_id(self.source, listing_id or url),
+            "source": self.source,
+            "url": url,
+            "address": "",
+            "neighborhood": "",
+            "borough": "Manhattan",
+            "beds": None,
+            "baths": None,
+            "price": None,
+            "broker_fee": None,
+            "broker_fee_source": "assumed",
+            "amenities_raw": [],
+            "building_amenities": None,
+            "nearest_subway": None,
+            "contact_name": None,
+            "contact_email": None,
+            "contact_phone": None,
+            "listed_date": datetime.utcnow().strftime("%Y-%m-%d"),
+            "move_in_date": None,
+            "has_photos": True,
+            "laundry_in_unit": False,
+            "laundry_in_building": False,
+            "dishwasher": False,
+            "near_subway": False,
+            "gym": False,
+            "rooftop": False,
+        }
 
     # ── Chrome helpers ────────────────────────────────────────────────────────
 
@@ -254,7 +296,25 @@ class ApartmentsComScraper(BaseScraper):
     def _parse_detail(self, html: str) -> dict:
         soup = BeautifulSoup(html, "lxml")
 
+        # ── Address from page header ──────────────────────────────────────────
+        address = None
+        for sel in ["h1.propertyName", ".propertyAddress", "h1[class*='address']", ".listingTitle"]:
+            el = soup.select_one(sel)
+            if el:
+                address = el.get_text(strip=True)
+                break
+
+        # ── Price ─────────────────────────────────────────────────────────────
+        price = None
+        for sel in [".rentTextBox", ".priceTextBox", "[class*='rentPrice']"]:
+            el = soup.select_one(sel)
+            if el:
+                price = parse_price(el.get_text())
+                if price:
+                    break
+
         # ── Beds / baths / move-in from rentInfoLabel → rentInfoDetail pairs ─
+        beds = None
         baths = None
         move_in_date = None
         for label_el in soup.find_all(class_="rentInfoLabel"):
@@ -263,8 +323,10 @@ class ApartmentsComScraper(BaseScraper):
             if not detail_el:
                 continue
             value = detail_el.get_text(strip=True)
-            if label == "bathrooms":
+            if "bath" in label:
                 baths = self._parse_baths_range(value)
+            elif "bed" in label:
+                beds = self._parse_beds(value)
             elif label == "available":
                 move_in_date = _parse_move_in(value)
 
@@ -320,6 +382,8 @@ class ApartmentsComScraper(BaseScraper):
 
         result: dict = {
             "baths": baths,
+            "beds": beds,
+            "price": price,
             "move_in_date": move_in_date,
             "amenities_raw": amenity_strings,
             "building_amenities": building_amenities or None,
@@ -330,6 +394,8 @@ class ApartmentsComScraper(BaseScraper):
         }
         if neighborhood:
             result["neighborhood"] = neighborhood
+        if address:
+            result["address"] = address
         return result
 
     # ── Parsers ───────────────────────────────────────────────────────────────
